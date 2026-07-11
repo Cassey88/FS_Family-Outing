@@ -1,7 +1,7 @@
 {
   "name": "Family Outing",
   "short_name": "Family Outing",
-  "description": "One-tap shortcut to a web page",
+  "description": "One-tap shortcut to a file on this device",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#10141F",
