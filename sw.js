@@ -1,4 +1,4 @@
-const CACHE = 'web-shortcut-v1';
+const CACHE = 'fs-family-outing-v5';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -12,7 +12,7 @@ self.addEventListener('activate', e => {
 
 function idbGet(key) {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('webShortcut', 1);
+    const r = indexedDB.open('fileShortcut', 1);
     r.onupgradeneeded = () => r.result.createObjectStore('kv');
     r.onsuccess = () => {
       try {
@@ -25,7 +25,8 @@ function idbGet(key) {
   });
 }
 
-// Per-slot manifest so each shortcut installs as its own named icon
+// Per-slot manifest: unique id + start_url per shortcut so Android
+// installs each one as a separate home screen app, with its own name.
 async function customManifest(req) {
   const url = new URL(req.url);
   const slot = (url.searchParams.get('slot') || '1').replace(/[^0-9]/g, '') || '1';
@@ -37,21 +38,41 @@ async function customManifest(req) {
   try {
     const name = await idbGet(nameKey);
     if (name) { json.name = name; json.short_name = name; }
-    else if (slot !== '1') { json.name = 'Web Shortcut ' + slot; json.short_name = 'Shortcut ' + slot; }
+    else if (slot !== '1') { json.name = 'File Shortcut ' + slot; json.short_name = 'Shortcut ' + slot; }
   } catch (e) { /* default names */ }
   return new Response(JSON.stringify(json), {
     headers: { 'Content-Type': 'application/manifest+json' }
   });
 }
 
+// Serve the staged file at a permanent URL: ./file?slot=N
+// Back/forward, reload, and even direct shortcuts to it always work.
+async function serveFile(url) {
+  const slot = (url.searchParams.get('slot') || '1').replace(/[^0-9]/g, '') || '1';
+  const f = await idbGet('fileserve:' + slot);
+  if (!f) {
+    return Response.redirect(new URL('./index.html?slot=' + slot, self.registration.scope).href, 302);
+  }
+  return new Response(f, {
+    headers: {
+      'Content-Type': f.type || 'application/octet-stream',
+      'Content-Disposition': 'inline; filename="' + (f.name || 'file') + '"'
+    }
+  });
+}
+
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
-  if (url.origin !== self.location.origin) return; // never touch the target sites
+  if (url.pathname.endsWith('/file')) {
+    e.respondWith(serveFile(url));
+    return;
+  }
   if (url.pathname.endsWith('manifest.json')) {
     e.respondWith(customManifest(e.request));
     return;
   }
+  // ignoreSearch so index.html?slot=N serves from the cached index.html offline
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(hit => hit || fetch(e.request))
   );
